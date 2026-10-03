@@ -76,6 +76,42 @@ affiche « La barre se déplace… », puis confirme (ou dit que la barre n'a pa
   le test VM déplace vraiment la barre dans la session de l'utilisateur de test, vérifie que Plasma le confirme et que le
   choix est écrit dans sa configuration, puis la remet en haut.
 
+## Raccourcis : l'aide-mémoire de Windows
+
+Un utilisateur de Windows a des réflexes : Windows + E pour les fichiers, Windows + L pour verrouiller, Windows + V pour
+l'historique du presse-papiers. **Paramètres → Bluetooth et appareils → Aide-mémoire des raccourcis** ouvre une page qui liste
+ceux qui marchent sur BinixX OS (touches dessinées comme sur un clavier, avec une recherche : « capture », « fichiers »,
+« windows e »). Le bouton « Personnaliser » ouvre les raccourcis de la Configuration du système (`kcm_keys`) pour en changer
+ou en ajouter.
+
+- **Deux sources** : `kde` = Plasma les fournit lui-même (Windows + D, Windows + L, Alt + Tab…) ; `binixx` = l'image les ajoute,
+  parce que KDE n'offre pas l'équivalent : **Windows + R** (la barre de recherche de KRunner), **Ctrl + Maj + Échap** (le
+  Moniteur système, comme le Gestionnaire des tâches ; Ctrl + Échap marche toujours) et **Windows + E** (Dolphin ; KDE le
+  fournit normalement, la ligne le garantit). Windows + I (Paramètres) existait déjà. **Windows + Maj + S** (capturer une
+  zone) est celui de Spectacle, déjà dans KDE.
+- **Comment** : `etc/xdg/kglobalshortcutsrc` (`_launch=` par lanceur), et chaque lanceur ajouté déclare la même touche
+  (`X-KDE-Shortcuts=`) : `binixx-executer.desktop`, `binixx-gestionnaire-taches.desktop`.
+  Les réglages de l'utilisateur passent avant : s'il change une touche, la sienne reste.
+- **Une touche, un seul propriétaire** : KDE ne sert qu'une action par touche. Spectacle prend déjà Windows + R (une de ses
+  actions d'enregistrement d'écran) et la Configuration du système Windows + I : sans précaution, nos raccourcis ne marcheraient
+  que par moments. Constaté dans le test VM : un `[services]` dans `kglobalshortcutsrc` ne retire pas la touche à ces lanceurs,
+  KDE lit la déclaration `X-KDE-Shortcuts` de leur fichier `.desktop`. Au build, `build_files/modules.d/78-raccourcis.sh` lance donc
+  `binixx-raccourcis surcharger` : il lit les `X-KDE-Shortcuts` des lanceurs de KDE (entrée principale ou `[Desktop Action X]`),
+  retire nos touches (source `binixx`) dans le `.desktop` de ceux qui ne sont pas à nous, et note ce qu'il a retiré dans
+  `/usr/share/binixx/raccourcis/touches-retirees.txt`. Il ne touche ni aux touches de source `kde`, ni à nos lanceurs `binixx-*`.
+  Le build échoue s'il reste un conflit.
+- **La liste** : `usr/share/binixx/raccourcis/raccourcis.tsv` (catégorie, touches à la KDE, action, précision, source).
+  Ajouter un raccourci = ajouter une ligne ; si sa source est `binixx`, ajouter aussi son `_launch` dans
+  `kglobalshortcutsrc` (un test l'exige, et un test refuse l'inverse : une touche posée par l'image sans être annoncée).
+- **Une promesse vérifiée** : `binixx_centre/raccourcis.py` interroge le service de raccourcis de KDE
+  (`org.kde.kglobalaccel`, par `busctl`, sans shell) et compare les codes de touches de Qt avec ceux du fichier. Le test VM
+  lance `binixx-raccourcis verifier` dans la vraie session : **un raccourci annoncé que KDE n'a pas enregistré (MANQUE), ou qu'il
+  donne à plusieurs actions (CONFLIT), fait échouer le test**, et le journal contient tout ce que KDE a enregistré (composant / action) pour corriger la liste.
+- **En ligne de commande** (support, scripts d'entreprise) : `/usr/libexec/binixx/binixx-raccourcis liste|verifier|registre|surcharger`.
+- **Page sans bouton dans la barre latérale** : comme la barre des tâches, elle s'ouvre depuis Paramètres.
+- **Tests** : `tests/image/centre/test_raccourcis.py` (fichier, codes de touches, lecture de la réponse de KDE, cohérence
+  avec les lanceurs, page) ; la CI vérifie les lanceurs et les programmes ouverts (`78-raccourcis.sh`).
+
 ## Installer des applications
 
 La page **Installer des applications** (menu, ou bouton « Choisir mes applications » de l'accueil) remplace, pour
@@ -139,6 +175,37 @@ Le catalogue est un simple fichier : `system_files/usr/share/binixx/catalogue-wi
 - `tests/centre/verifier_flathub.py` : vérifie sur Flathub que chaque identifiant existe et affiche sa
   licence (réseau nécessaire) ;
 - la CI vérifie aussi que chaque logiciel « inclus » a son lanceur dans l'image.
+
+## Recherche unique : Windows + S
+
+Sous Windows, **Windows + S** cherche tout d'un coup. BinixX OS fait pareil : une petite fenêtre avec une barre de recherche,
+qui montre **dans une seule liste**, groupée par catégorie :
+
+| Catégorie | Ce qu'on y trouve | Un Entrée... |
+| --- | --- | --- |
+| **Applications** | Les applications installées, **Flatpak compris** (nom, nom générique, mots-clés). | ...ouvre l'application. |
+| **Réglages** | L'index de Paramètres, avec les mots de Windows : « wifi », « imprimante », « bitlocker », « panneau de configuration ». | ...ouvre le réglage (module KDE, page du Centre, application). |
+| **Logiciels Windows** | Le catalogue « Mon logiciel Windows » : « word » montre OnlyOffice Documents, « gestionnaire des tâches » le Moniteur système. | ...ouvre le logiciel s'il est déjà là, sinon le catalogue sur la bonne recherche. |
+| **Aide** | Les cas d'« Obtenir de l'aide » (« mon imprimante n'imprime pas », « le PC est lent »). | ...ouvre la page d'aide. |
+| **Fichiers** | Les fichiers indexés par Baloo (`baloosearch6`), qui arrivent **après** les autres, sans bloquer la frappe. | ...ouvre le fichier avec son application. |
+
+- **Ordre** : chaque catégorie est rangée par son meilleur résultat, et le premier résultat de la liste est déjà sélectionné :
+  on tape « imprimante » puis Entrée. La note d'un résultat est d'autant plus haute que la requête ressemble à son nom
+  (nom exact, début du nom, synonyme…), sans accents ni majuscules, et « wifi » trouve « Wi-Fi ». Les mots-clés d'un lanceur
+  pèsent peu : « Mon logiciel Windows » cite Word et Excel, mais « word » met d'abord l'équivalent de Word.
+- **Clavier** : flèches pour passer d'un résultat à l'autre (les titres de catégorie sont sautés), Entrée pour ouvrir, **Échap**
+  ou un clic ailleurs pour fermer.
+- **Pourquoi pas le Centre ?** Le Centre construit toutes ses pages à l'ouverture : trop lent pour une recherche. La
+  recherche est une petite fenêtre à part (`binixx-recherche`) qui ne charge que l'index.
+- **La touche** : `usr/share/applications/binixx-recherche.desktop` (`X-KDE-Shortcuts=Meta+S`) et `etc/xdg/kglobalshortcutsrc`.
+- **Code** : `binixx_centre/recherche.py` (notation, lecture des `.desktop`, regroupement, ouverture ; aucune dépendance à Qt) et
+  `binixx_centre/recherche_fenetre.py` (la fenêtre). Rien n'est lancé par un shell : chaque genre de résultat a sa fonction dans
+  `launch.py`, et le texte tapé n'arrive jamais dans une commande, sauf après normalisation (lettres et chiffres) pour `baloosearch6`.
+- **En ligne de commande** (support, tests) : `binixx-recherche --texte imprimante [--json]` affiche ce que la fenêtre montrerait.
+- **Centre ouvert sur une recherche** : `binixx-centre --page catalogue --recherche=word`.
+- **Tests** : `tests/image/centre/test_recherche.py` (notation, lanceurs, regroupement, ouverture, fenêtre) ; la CI vérifie
+  les résultats sur les vrais fichiers de l'image et peint la fenêtre (`81-recherche.sh`) ; le test VM cherche « imprimante »,
+  « word », « firefox » et « onlyoffice » (un Flatpak) dans la vraie session (`81-recherche.sh`).
 
 ## Pourquoi pas le Centre de bienvenue de KDE ?
 
